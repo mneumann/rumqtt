@@ -141,7 +141,12 @@ impl MqttState {
             Request::Unsubscribe(unsubscribe) => self.outgoing_unsubscribe(unsubscribe)?,
             Request::PingReq => self.outgoing_ping()?,
             Request::Disconnect => self.outgoing_disconnect()?,
-            _ => unimplemented!(),
+            Request::PubAck(..) => unimplemented!(),
+            Request::PubRec(..) => unimplemented!(),
+            Request::PubComp(..) => unimplemented!(),
+            Request::PingResp => unimplemented!(),
+            Request::SubAck(..) => unimplemented!(),
+            Request::UnsubAck(..) => unimplemented!()
         };
         self.events.push_back(event);
 
