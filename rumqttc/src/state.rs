@@ -233,19 +233,21 @@ impl MqttState {
     }
 
     fn handle_incoming_pubrec(&mut self, pubrec: &PubRec) -> Result<(), StateError> {
-        match self.outgoing_pub.remove(pubrec.pkid)? {
+        let pkid = pubrec.pkid;
+
+        match self.outgoing_pub.remove(pkid)? {
             Some(_) => {
                 // NOTE: Inflight - 1 for qos2 in comp
-                let _ = self.outgoing_rel.insert(pubrec.pkid);
-                PubRel::new(pubrec.pkid).write(&mut self.write)?;
+                let _ = self.outgoing_rel.insert(pkid);
+                PubRel::new(pkid).write(&mut self.write)?;
 
-                let event = Event::Outgoing(Outgoing::PubRel(pubrec.pkid));
+                let event = Event::Outgoing(Outgoing::PubRel(pkid));
                 self.events.push_back(event);
                 Ok(())
             }
             None => {
-                error!("Unsolicited pubrec packet: {:?}", pubrec.pkid);
-                Err(StateError::Unsolicited(pubrec.pkid))
+                error!("Unsolicited pubrec packet: {:?}", pkid);
+                Err(StateError::Unsolicited(pkid))
             }
         }
     }
