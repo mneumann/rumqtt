@@ -134,7 +134,7 @@ impl MqttState {
     /// Consolidates handling of all outgoing mqtt packet logic. Returns a packet which should
     /// be put on to the network by the eventloop
     pub fn handle_outgoing_packet(&mut self, request: Request) -> Result<(), StateError> {
-        match request {
+        let event = match request {
             Request::Publish(publish) => self.outgoing_publish(publish)?,
             Request::PubRel(pubrel) => self.outgoing_pubrel(pubrel)?,
             Request::Subscribe(subscribe) => self.outgoing_subscribe(subscribe)?,
@@ -143,6 +143,7 @@ impl MqttState {
             Request::Disconnect => self.outgoing_disconnect()?,
             _ => unimplemented!(),
         };
+        self.events.push_back(event);
 
         self.last_outgoing = Instant::now();
         Ok(())
@@ -290,7 +291,7 @@ impl MqttState {
 
     /// Adds next packet identifier to QoS 1 and 2 publish packets and returns
     /// it buy wrapping publish in packet
-    fn outgoing_publish(&mut self, mut publish: Publish) -> Result<(), StateError> {
+    fn outgoing_publish(&mut self, mut publish: Publish) -> Result<Event, StateError> {
         self.assign_pkid(&mut publish);
 
         debug!(
@@ -329,25 +330,23 @@ impl MqttState {
         };
 
         let event = Event::Outgoing(Outgoing::Publish(pkid));
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
-    fn outgoing_pubrel(&mut self, pubrel: PubRel) -> Result<(), StateError> {
+    fn outgoing_pubrel(&mut self, pubrel: PubRel) -> Result<Event, StateError> {
         let pubrel = self.save_pubrel(pubrel)?;
 
         debug!("Pubrel. Pkid = {}", pubrel.pkid);
         PubRel::new(pubrel.pkid).write(&mut self.write)?;
 
         let event = Event::Outgoing(Outgoing::PubRel(pubrel.pkid));
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
     /// check when the last control packet/pingreq packet is received and return
     /// the status which tells if keep alive time has exceeded
     /// NOTE: status will be checked for zero keepalive times also
-    fn outgoing_ping(&mut self) -> Result<(), StateError> {
+    fn outgoing_ping(&mut self) -> Result<Event, StateError> {
         let elapsed_in = self.last_incoming.elapsed();
         let elapsed_out = self.last_outgoing.elapsed();
 
@@ -375,11 +374,10 @@ impl MqttState {
 
         PingReq.write(&mut self.write)?;
         let event = Event::Outgoing(Outgoing::PingReq);
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
-    fn outgoing_subscribe(&mut self, mut subscription: Subscribe) -> Result<(), StateError> {
+    fn outgoing_subscribe(&mut self, mut subscription: Subscribe) -> Result<Event, StateError> {
         let pkid = self.next_pkid();
         subscription.pkid = pkid;
 
@@ -390,11 +388,10 @@ impl MqttState {
 
         subscription.write(&mut self.write)?;
         let event = Event::Outgoing(Outgoing::Subscribe(subscription.pkid));
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
-    fn outgoing_unsubscribe(&mut self, mut unsub: Unsubscribe) -> Result<(), StateError> {
+    fn outgoing_unsubscribe(&mut self, mut unsub: Unsubscribe) -> Result<Event, StateError> {
         let pkid = self.next_pkid();
         unsub.pkid = pkid;
 
@@ -405,17 +402,15 @@ impl MqttState {
 
         unsub.write(&mut self.write)?;
         let event = Event::Outgoing(Outgoing::Unsubscribe(unsub.pkid));
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
-    fn outgoing_disconnect(&mut self) -> Result<(), StateError> {
+    fn outgoing_disconnect(&mut self) -> Result<Event, StateError> {
         debug!("Disconnect");
 
         Disconnect.write(&mut self.write)?;
         let event = Event::Outgoing(Outgoing::Disconnect);
-        self.events.push_back(event);
-        Ok(())
+        Ok(event)
     }
 
     /// If there was a collision with `pkid`, remove it both from `self.collision` and from
@@ -578,14 +573,9 @@ mod test {
         publish.pkid = 42;
 
         // QoS 0 publish shouldn't be saved in queue
-        mqtt.outgoing_publish(publish).unwrap();
+        let event = mqtt.outgoing_publish(publish).unwrap();
         assert_eq!(mqtt.last_pkid, 0);
-
-        if let Some(super::Event::Outgoing(super::Outgoing::Publish(pkid))) = mqtt.events.pop_back() {
-            assert_eq!(pkid, 0);
-        } else {
-            assert!(false);
-        }
+        assert_eq!(event, super::Event::Outgoing(super::Outgoing::Publish(0)));
     }
 
     #[test]
