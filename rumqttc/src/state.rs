@@ -187,17 +187,15 @@ impl MqttState {
     /// in case of QoS1 and Replys rec in case of QoS while also storing the message
     fn handle_incoming_publish(&mut self, publish: &Publish) -> Result<(), StateError> {
         let qos = publish.qos;
+        let pkid = publish.pkid;
 
         match qos {
             QoS::AtMostOnce => Ok(()),
             QoS::AtLeastOnce => {
-                let pkid = publish.pkid;
                 PubAck::new(pkid).write(&mut self.write)?;
-
                 Ok(())
             }
             QoS::ExactlyOnce => {
-                let pkid = publish.pkid;
                 PubRec::new(pkid).write(&mut self.write)?;
                 let _ = self.incoming_pub.insert(pkid);
                 Ok(())
